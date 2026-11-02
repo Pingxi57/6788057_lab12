@@ -1,0 +1,13 @@
+/*
+AI Declaration:
+I used Claude to explain the Lecture 10 testing concepts and guide me 
+step by step through the lab. It helped me fix setup problems and gave 
+example test code. I typed, ran, and checked every test myself,
+and I understand what each test checks.
+
+Reflection:
+I learned the difference between unit, integration, and E2E tests,
+and why we mock Prisma, guards, and the cache.
+Writing tests also helped me find bugs in my own code,
+like the update method that did not save anything to the database.
+*/

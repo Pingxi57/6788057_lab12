@@ -1,0 +1,281 @@
+{
+  "info": {
+    "_postman_id": "6c0fb292-38f2-4e09-8903-6cad5f2dfac0",
+    "name": "ITCS258 Lab12 — API and persistence",
+    "description": "Optional companion to Lab 12. Send 01, then 02 ONCE, then 03. During restart/recreation send only 01/03: do not rerun the entire collection. POST 02 preserves an existing baseline and reports a failed test rather than overwriting it. Read API-TESTING.md before use. / แนวทางเสริม: ส่ง 01 แล้ว 02 ครั้งเดียว จากนั้นใช้ 03 ตรวจข้อมูลเดิมหลัง restart และ down/up ห้ามสร้างแถวใหม่เพื่อพิสูจน์ persistence.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "[\"base_url\", \"student_id\", \"note_body\", \"framework\"].forEach(key => {",
+          "  const value = pm.variables.get(key);",
+          "  if (typeof value !== \"string\" || !value.trim()) {",
+          "    throw new Error(\"Select the Lab 12 environment and set \" + key);",
+          "  }",
+          "});",
+          "if (![\"express\", \"fastapi\", \"nestjs\"].includes(pm.variables.get(\"framework\"))) {",
+          "  throw new Error(\"framework must be express, fastapi or nestjs\");",
+          "}",
+          "pm.variables.set(\"base_url\", pm.variables.get(\"base_url\").trim().replace(/\\/$/, \"\"));",
+          "pm.variables.set(\"student_id\", pm.variables.get(\"student_id\").trim());",
+          "pm.variables.set(\"note_body\", pm.variables.get(\"note_body\").trim());",
+          "if (!/^[A-Za-z0-9_-]{1,30}$/.test(pm.variables.get(\"student_id\"))) {",
+          "  throw new Error(\"student_id must contain 1-30 letters/digits/_/-\");",
+          "}",
+          "if (pm.variables.get(\"note_body\").length > 200) {",
+          "  throw new Error(\"note_body must be at most 200 characters\");",
+          "}",
+          "pm.variables.set(\"note_payload\", JSON.stringify({ student_id: pm.variables.get(\"student_id\"), body: pm.variables.get(\"note_body\") }));",
+          "pm.variables.set(\"invalid_payload\", JSON.stringify({ student_id: pm.variables.get(\"student_id\"), body: \"\" }));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseline_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "baseline_student_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "baseline_body",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "baseline_created_at",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "baseline_base_url",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200: API and database are ready\", () => pm.response.to.have.status(200));",
+              "pm.test(\"JSON reports a database connection\", () => {",
+              "  const value = pm.response.json();",
+              "  pm.expect(value.status).to.eql(\"ok\");",
+              "  pm.expect(value.database).to.eql(\"connected\");",
+              "  pm.expect(value.framework).to.eql(pm.variables.get(\"framework\"));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Expect HTTP 200 and database=connected. Host laptop uses localhost; the app uses db:5432 inside Compose. / ตรวจแอปและ DB พร้อมใช้งาน"
+      }
+    },
+    {
+      "name": "02 Create baseline ONCE",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201: one note was created\", () => pm.response.to.have.status(201));",
+              "pm.test(\"Created row matches the submitted student and marker\", () => {",
+              "  const row = pm.response.json();",
+              "  pm.expect(String(row.id)).to.match(/^\\d+$/);",
+              "  pm.expect(row.student_id).to.eql(String(pm.variables.get(\"student_id\")).trim());",
+              "  pm.expect(row.body).to.eql(String(pm.variables.get(\"note_body\")).trim());",
+              "  pm.expect(Number.isNaN(Date.parse(row.created_at))).to.eql(false);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  const row = pm.response.json();",
+              "  const valid = row && row.id != null && row.student_id === String(pm.variables.get(\"student_id\")).trim() && row.body === String(pm.variables.get(\"note_body\")).trim() && !Number.isNaN(Date.parse(row.created_at));",
+              "  const previous = pm.collectionVariables.get(\"baseline_id\");",
+              "  pm.test(\"Save baseline once: use request 03 for all later checks\", () => {",
+              "    pm.expect(Boolean(previous), \"A baseline already exists. It was NOT overwritten; send GET request 03. Clear baseline_* only for a deliberate NEW experiment.\").to.eql(false);",
+              "    pm.expect(valid, \"Cannot save a malformed response as proof\").to.eql(true);",
+              "  });",
+              "  if (!previous && valid) {",
+              "    pm.collectionVariables.set(\"baseline_id\", String(row.id));",
+              "    pm.collectionVariables.set(\"baseline_student_id\", row.student_id);",
+              "    pm.collectionVariables.set(\"baseline_body\", row.body);",
+              "    pm.collectionVariables.set(\"baseline_created_at\", row.created_at);",
+              "    pm.collectionVariables.set(\"baseline_base_url\", String(pm.variables.get(\"base_url\")).replace(/\\/$/, \"\"));",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/notes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "notes"
+          ]
+        },
+        "description": "Send ONCE to create and save the original row. Repeating creates another row but NEVER overwrites an existing saved baseline. / ส่งครั้งเดียวเพื่อบันทึกแถวต้นฉบับ",
+        "body": {
+          "mode": "raw",
+          "raw": "{{note_payload}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "03 Read original note (repeat after restart)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200: notes can be read\", () => pm.response.to.have.status(200));",
+              "pm.test(\"The same original row is still present\", () => {",
+              "  const rows = pm.response.json();",
+              "  pm.expect(rows).to.be.an(\"array\");",
+              "  const savedId = pm.collectionVariables.get(\"baseline_id\");",
+              "  pm.expect(Boolean(savedId), \"Send request 02 ONCE before checking persistence\").to.eql(true);",
+              "  pm.expect(String(pm.variables.get(\"base_url\")).replace(/\\/$/, \"\"), \"Use the original framework URL\").to.eql(pm.collectionVariables.get(\"baseline_base_url\"));",
+              "  const row = rows.find(value => String(value.id) === String(savedId));",
+              "  pm.expect(row, \"The original note is missing: do not reinsert it\").to.exist;",
+              "  pm.expect(row.student_id).to.eql(pm.collectionVariables.get(\"baseline_student_id\"));",
+              "  pm.expect(row.body).to.eql(pm.collectionVariables.get(\"baseline_body\"));",
+              "  const actualTime = Date.parse(row.created_at);",
+              "  const baselineTime = Date.parse(pm.collectionVariables.get(\"baseline_created_at\"));",
+              "  pm.expect(Number.isNaN(actualTime)).to.eql(false);",
+              "  pm.expect(Number.isNaN(baselineTime)).to.eql(false);",
+              "  pm.expect(actualTime, \"Same creation instant, including equivalent timezone formats\").to.eql(baselineTime);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/notes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "notes"
+          ]
+        },
+        "description": "Repeat this GET before and after restart and down/up. Test checks the saved original ID, student, body and creation instant. Do not send POST during proof. / ใช้ GET นี้ตรวจแถวเดิมก่อนและหลัง restart"
+      }
+    },
+    {
+      "name": "04 Invalid input (optional)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Invalid data is rejected\", () => {",
+              "  const expected = pm.variables.get(\"framework\") === \"fastapi\" ? 422 : 400;",
+              "  pm.response.to.have.status(expected);",
+              "});",
+              "pm.test(\"Error response is JSON\", () => {",
+              "  const error = pm.response.json();",
+              "  pm.expect(error).to.be.an(\"object\");",
+              "  pm.expect(Boolean(error.error || error.detail)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/notes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "notes"
+          ]
+        },
+        "description": "Optional negative test: Express/NestJS 400; FastAPI 422. Empty body must not create a note. / ทดสอบส่งข้อความว่าง ต้องถูกปฏิเสธ",
+        "body": {
+          "mode": "raw",
+          "raw": "{{invalid_payload}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
